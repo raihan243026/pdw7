@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Bore-Well Pump Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Warm Neutrals (Slate-50 BG, White Cards) with Blue Accent -->
+    <!-- Application Structure Plan: A dashboard/explorer layout was chosen. This structure is highly user-friendly for this type of data, allowing users to intuitively filter a large product catalog. The flow is: 1) High-level summary, 2) Interactive filter controls, 3) Dynamic visualizations (charts) that react to filters, and 4) A detailed, filterable data table for drill-down. This is superior to a static table as it guides the user from their requirements (e.g., "I need a pump for a 150mm well") to a short-list of suitable options, visually comparing them by price and performance. -->
+    <!-- Visualization & Content Choices:
+        - Report Info: Full 43-item pump spec table. Goal: Allow users to find/compare pumps.
+        - Presentation 1: Interactive Filters (HTML/JS). Interaction: Sliders for HP, number inputs for Head/Discharge, checkboxes for Tube Dia. Justification: Provides direct, intuitive control over the data.
+        - Presentation 2: Scatter Plot (Price vs. HP) (Chart.js/Canvas). Goal: Visualize cost-to-power relationship. Interaction: Updates dynamically with filters. Tooltips show details. Justification: Key purchasing decision factor.
+        - Presentation 3: Scatter Plot (Max Head vs. Max Discharge) (Chart.js/Canvas). Goal: Visualize performance envelope. Interaction: Updates with filters. Tooltips. Justification: Key technical selection factor.
+        - Presentation 4: Dynamic Data Table (HTML/JS). Goal: Provide detailed drill-down of filtered results. Interaction: Table body is completely rebuilt on filter change. Justification: Users need to see the exact specs of the pumps that match their criteria.
+        - Presentation 5: Static Text Block. Goal: Provide qualitative context from the report.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 384px;
+            max-height: 384px;
+        }
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            outline: none;
+            opacity: 0.9;
+            transition: opacity .2s;
+            border-radius: 9999px;
+        }
+        input[type=range]:hover {
+            opacity: 1;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #3b82f6;
+            cursor: pointer;
+            border-radius: 9999px;
+            margin-top: -6px;
+        }
+        input[type=range]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #3b82f6;
+            cursor: pointer;
+            border-radius: 9999px;
+        }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <header class="bg-white shadow-sm sticky top-0 z-10">
+        <div class="container mx-auto px-4 md:px-8 py-4">
+            <h1 class="text-2xl md:text-3xl font-bold text-slate-900">Interactive Bore-Well Pump Explorer</h1>
+            <p class="text-slate-600">Explore specifications and pricing for multistage submersible pumps.</p>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4 md:p-8">
+
+        <section id="intro" class="mb-8 bg-white p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold mb-3">Welcome to the Pump Explorer</h2>
+            <p class="text-slate-700">This application transforms a detailed specification sheet into an interactive tool. Use the filters below to find the exact pump that meets your needs. The charts and table will update in real-time to reflect your selections. You can explore 43 different pump models, ranging from 0.75 HP up to 90 HP, to compare their performance, physical dimensions, and cost.</p>
+        </section>
+
+        <section id="explorer" class="space-y-8">
+            <div id="filters" class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-semibold mb-4">Filter Your Options</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    
+                    <div>
+                        <label for="hpMin" class="block text-sm font-medium text-slate-700">HP Range (Min: <span id="hpMinVal">0.75</span>)</label>
+                        <input type="range" id="hpMin" min="0.75" max="90" step="0.25" value="0.75" class="w-full mt-1">
+                        <label for="hpMax" class_live="block text-sm font-medium text-slate-700 mt-2">HP Range (Max: <span id="hpMaxVal">90</span>)</label>
+                        <input type="range" id="hpMax" min="0.75" max="90" step="0.25" value="90" class="w-full mt-1">
+                    </div>
+
+                    <div>
+                        <label for="reqHead" class="block text-sm font-medium text-slate-700">Required Head (meter)</label>
+                        <input type="number" id="reqHead" placeholder="e.g. 50" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        <p class="mt-1 text-xs text-slate-500">Find pumps that can operate at this head.</p>
+                    </div>
+
+                    <div>
+                        <label for="reqDischarge" class="block text-sm font-medium text-slate-700">Required Discharge (liter/min)</label>
+                        <input type="number" id="reqDischarge" placeholder="e.g. 100" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        <p class="mt-1 text-xs text-slate-500">Find pumps that can deliver at least this flow.</p>
+                    </div>
+
+                    <div>
+                        <fieldset>
+                            <legend class="block text-sm font-medium text-slate-700">Tube-well Diameter (mm)</legend>
+                            <div id="tubeDiaFilters" class="mt-2 space-y-2">
+                            </div>
+                        </fieldset>
+                    </div>
+                </div>
+            </div>
+
+            <div id="visuals" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="chart-container-wrapper bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-lg font-semibold text-center mb-3">Price vs. Horsepower</h3>
+                    <div class="chart-container">
+                        <canvas id="priceVsHpChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container-wrapper bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-lg font-semibold text-center mb-3">Performance Envelope (Head vs. Discharge)</h3>
+                    <div class="chart-container">
+                        <canvas id="headVsDischargeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div id="table-section" class="bg-white rounded-lg shadow overflow-hidden">
+                <div class="p-4 border-b border-slate-200">
+                    <h2 class="text-xl font-semibold">Matching Pump Specifications</h2>
+                    <p class="text-sm text-slate-600">Showing <span id="itemCount">43</span> of 43 items.</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Item No.</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">HP</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Discharge (l/min)</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Head (m)</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tube-well Dia (mm)</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Price (Tk)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pumpTableBody" class="bg-white divide-y divide-slate-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="specs" class="mt-12 bg-white p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold mb-3">General Technical Specifications</h2>
+            <p class="mb-4 text-slate-700">All pump sets listed adhere to the following minimum general specifications as per the source document:</p>
+            <ul class="list-disc list-inside space-y-2 text-slate-600">
+                <li><strong>Standards:</strong> Manufactured according to relevant BDS standards, ISO 9001:2015, and ISO 9906:2012 (Grade 3B).</li>
+                <li><strong>Certifications:</strong> CE certified or UL listed.</li>
+                <li><strong>Manufacturer:</strong> Minimum 30 years of manufacturing experience.</li>
+                <li><strong>Country of Manufacture:</strong> EU Countries, USA, Japan, or UK.</li>
+                <li><strong>Motor:</strong> 2900 RPM, single/three-phase submersible rewindable type (oil/water cooled).</li>
+                <li><strong>Protection:</strong> Insulation Class F & Protection IP68 (minimum).</li>
+                <li><strong>Operation:</strong> Suitable for 230/400 V ±5%, 50 Hz AC supply.</li>
+                <li><strong>Components:</strong> Includes a non-return valve and 10m marine cable (total cable in a single length).</li>
+            </ul>
+        </section>
+
+    </main>
+
+    <footer class="mt-12 py-6 border-t border-slate-200">
+        <div class="container mx-auto px-4 md:px-8 text-center text-slate-500 text-sm">
+            <p>Interactive data explorer based on provided specification report.</p>
+        </div>
+    </footer>
+
+    <script>
+        const rawData = [
+            { no: "5.7.1", hp: 0.75, dis: "13-53", head: "69-30", tube: 100, pipe: 31.25, price: 61966 },
+            { no: "5.7.2", hp: 1, dis: "25-100", head: "58-18", tube: 100, pipe: 31.25, price: 58898 },
+            { no: "5.7.3", hp: 1, dis: "13-53", head: "81-35", tube: 100, pipe: 31.25, price: 70555 },
+            { no: "5.7.4", hp: 1.5, dis: "33-133", head: "68-19", tube: 100, pipe: 50, price: 68101 },
+            { no: "5.7.5", hp: 1.5, dis: "10-58", head: "104-30", tube: 100, pipe: 31.25, price: 74850 },
+            { no: "5.7.6", hp: 2, dis: "40-200", head: "58-21", tube: 150, pipe: 31.25, price: 151663 },
+            { no: "5.7.7", hp: 2, dis: "50-300", head: "37-14", tube: 150, pipe: 50, price: 160866 },
+            { no: "5.7.8", hp: 3, dis: "25-150", head: "107-45", tube: 150, pipe: 50, price: 217310 },
+            { no: "5.7.9", hp: 3, dis: "20-100", head: "162-63", tube: 150, pipe: 31.25, price: 213384 },
+            { no: "5.7.10", hp: 3, dis: "50-300", head: "55-22", tube: 150, pipe: 50, price: 205285 },
+            { no: "5.7.11", hp: 4, dis: "50-375", head: "60-15", tube: 150, pipe: 50, price: 226513 },
+            { no: "5.7.12", hp: 5.5, dis: "40-200", head: "150-53", tube: 150, pipe: 50, price: 236943 },
+            { no: "5.7.13", hp: 5.5, dis: "50-300", head: "97-38", tube: 150, pipe: 50, price: 220501 },
+            { no: "5.7.14", hp: 5.5, dis: "50-375", head: "77-19", tube: 150, pipe: 50, price: 230440 },
+            { no: "5.7.15", hp: 5.5, dis: "233-567", head: "40-15", tube: 200, pipe: 65, price: 258294 },
+            { no: "5.7.16", hp: 7.5, dis: "40-200", head: "200-72", tube: 200, pipe: 50, price: 288356 },
+            { no: "5.7.17", hp: 7.5, dis: "50-300", head: "135-53", tube: 200, pipe: 50, price: 282957 },
+            { no: "5.7.18", hp: 7.5, dis: "50-450", head: "81-32", tube: 200, pipe: 80, price: 341978 },
+            { no: "5.7.19", hp: 7.5, dis: "67-300", head: "101-23", tube: 200, pipe: 80, price: 331917 },
+            { no: "5.7.20", hp: 7.5, dis: "133-433", head: "109-28", tube: 200, pipe: 65, price: 270564 },
+            { no: "5.7.21", hp: 7.5, dis: "333-1067", head: "48-17", tube: 200, pipe: 80, price: 262588 },
+            { no: "5.7.22", hp: 10, dis: "50-450", head: "121-48", tube: 200, pipe: 80, price: 460143 },
+            { no: "5.7.23", hp: 10, dis: "100-600", head: "92-31", tube: 200, pipe: 80, price: 453640 },
+            { no: "5.7.24", hp: 10, dis: "200-1000", head: "54-22", tube: 200, pipe: 80, price: 486402 },
+            { no: "5.7.25", hp: 10, dis: "100-800", head: "89-27", tube: 200, pipe: 80, price: 433884 },
+            { no: "5.7.26", hp: 15, dis: "200-1000", head: "87-35", tube: 200, pipe: 80, price: 590210 },
+            { no: "5.7.27", hp: 20, dis: "400-1600", head: "68-38", tube: 300, pipe: 100, price: 591437 },
+            { no: "5.7.28", hp: 20, dis: "400-1667", head: "82-30", tube: 300, pipe: 125, price: 495114 },
+            { no: "5.7.29", hp: 20, dis: "400-1200", head: "102-46", tube: 200, pipe: 80, price: 460757 },
+            { no: "5.7.30", hp: 25, dis: "400-1667", head: "96-30", tube: 300, pipe: 125, price: 531926 },
+            { no: "5.7.31", hp: 25, dis: "200-1400", head: "140-46", tube: 300, pipe: 80, price: 540515 },
+            { no: "5.7.32", hp: 30, dis: "400-1667", head: "120-49", tube: 300, pipe: 125, price: 603094 },
+            { no: "5.7.33", hp: 40, dis: "800-2000", head: "138-60", tube: 300, pipe: 125, price: 762120 },
+            { no: "5.7.34", hp: 40, dis: "400-1667", head: "173-68", tube: 300, pipe: 125, price: 756230 },
+            { no: "5.7.35", hp: 50, dis: "800-2000", head: "160-72", tube: 300, pipe: 150, price: 945932 },
+            { no: "5.7.36", hp: 50, dis: "833-2667", head: "115-60", tube: 300, pipe: 125, price: 933170 },
+            { no: "5.7.37", hp: 50, dis: "800-2250", head: "123-60", tube: 300, pipe: 125, price: 982252 },
+            { no: "5.7.38", hp: 60, dis: "500-2000", head: "180-90", tube: 300, pipe: 125, price: 1129744 },
+            { no: "5.7.39", hp: 60, dis: "800-2416", head: "146-55", tube: 300, pipe: 125, price: 1080416 },
+            { no: "5.7.40", hp: 60, dis: "833-2667", head: "138-72", tube: 300, pipe: 125, price: 1055875 },
+            { no: "5.7.41", hp: 75, dis: "500-2000", head: "184-94", tube: 300, pipe: 150, price: 1247908 },
+            { no: "5.7.42", hp: 80, dis: "1800-3800", head: "128-36", tube: 300, pipe: 125, price: 1264473 },
+            { no: "5.7.43", hp: 90, dis: "800-2000", head: "230-120", tube: 300, pipe: 150, price: 1379203 }
+        ];
+
+        const pumpData = rawData.map(p => {
+            const [disMin, disMax] = p.dis.split('-').map(Number);
+            const [headMax, headMin] = p.head.split('-').map(Number);
+            return {
+                id: p.no,
+                hp: p.hp,
+                dischargeMin: disMin,
+                dischargeMax: disMax,
+                headMin: headMin,
+                headMax: headMax,
+                tubeWellDia: p.tube,
+                columnPipeDia: p.pipe,
+                price: p.price
+            };
+        });
+        
+        const tubeDiaOptions = [...new Set(pumpData.map(p => p.tubeWellDia))].sort((a, b) => a - b);
+
+        let priceChart, performanceChart;
+        let filters = {
+            hpMin: 0.75,
+            hpMax: 90,
+            head: null,
+            discharge: null,
+            tubeDia: []
+        };
+
+        const formatCurrency = (value) => new Intl.NumberFormat('en-BD', { style: 'currency', currency: 'BDT', minimumFractionDigits: 0 }).format(value);
+        const formatNumber = (value) => new Intl.NumberFormat('en-US').format(value);
+
+        document.addEventListener('DOMContentLoaded', () => {
+            populateTubeDiaFilters();
+            initCharts();
+            setupEventListeners();
+            updateApp();
+        });
+
+        function populateTubeDiaFilters() {
+            const container = document.getElementById('tubeDiaFilters');
+            container.innerHTML = '';
+            tubeDiaOptions.forEach(dia => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center';
+                div.innerHTML = `
+                    <input id="dia-${dia}" name="tubeDia" type="checkbox" value="${dia}" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 tube-dia-filter">
+                    <label for="dia-${dia}" class="ml-2 block text-sm text-slate-900">${dia} mm</label>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function initCharts() {
+            const chartTooltip = {
+                callbacks: {
+                    label: (context) => {
+                        const item = context.raw.item;
+                        if (!item) return '';
+                        return [
+                            `Item: ${item.id} (${item.hp} HP)`,
+                            `Price: ${formatCurrency(item.price)}`,
+                            `Head: ${item.headMin}-${item.headMax} m`,
+                            `Discharge: ${item.dischargeMin}-${item.dischargeMax} l/min`
+                        ];
+                    }
+                }
+            };
+
+            const priceCtx = document.getElementById('priceVsHpChart').getContext('2d');
+            priceChart = new Chart(priceCtx, {
+                type: 'scatter',
+                data: { datasets: [{ 
+                    label: 'Pumps', 
+                    data: [], 
+                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    borderWidth: 1,
+                    pointRadius: 5,
+                    pointHoverRadius: 8
+                }] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Horsepower (HP)' }, min: 0 },
+                        y: { title: { display: true, text: 'Price (Tk)' }, ticks: { callback: (val) => formatNumber(val) } }
+                    },
+                    plugins: { tooltip: chartTooltip }
+                }
+            });
+
+            const perfCtx = document.getElementById('headVsDischargeChart').getContext('2d');
+            performanceChart = new Chart(perfCtx, {
+                type: 'scatter',
+                data: { datasets: [{ 
+                    label: 'Pumps', 
+                    data: [], 
+                    backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                    borderColor: 'rgba(239, 68, 68, 1)',
+                    borderWidth: 1,
+                    pointRadius: 5,
+                    pointHoverRadius: 8
+                }] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Max Discharge (liter/min)' }, min: 0 },
+                        y: { title: { display: true, text: 'Max Head (meter)' }, min: 0 }
+                    },
+                    plugins: { tooltip: chartTooltip }
+                }
+            });
+        }
+
+        function setupEventListeners() {
+            const hpMinSlider = document.getElementById('hpMin');
+            const hpMaxSlider = document.getElementById('hpMax');
+            const hpMinVal = document.getElementById('hpMinVal');
+            const hpMaxVal = document.getElementById('hpMaxVal');
+            const reqHeadInput = document.getElementById('reqHead');
+            const reqDischargeInput = document.getElementById('reqDischarge');
+            
+            hpMinSlider.addEventListener('input', () => {
+                if (+hpMinSlider.value > +hpMaxSlider.value) {
+                    hpMaxSlider.value = hpMinSlider.value;
+                }
+                updateFiltersAndApp();
+            });
+            hpMaxSlider.addEventListener('input', () => {
+                if (+hpMaxSlider.value < +hpMinSlider.value) {
+                    hpMinSlider.value = hpMaxSlider.value;
+                }
+                updateFiltersAndApp();
+            });
+
+            reqHeadInput.addEventListener('input', updateFiltersAndApp);
+            reqDischargeInput.addEventListener('input', updateFiltersAndApp);
+
+            document.getElementById('tubeDiaFilters').addEventListener('change', (e) => {
+                if (e.target.classList.contains('tube-dia-filter')) {
+                    updateFiltersAndApp();
+                }
+            });
+        }
+
+        function updateFiltersAndApp() {
+            const hpMinSlider = document.getElementById('hpMin');
+            const hpMaxSlider = document.getElementById('hpMax');
+            
+            document.getElementById('hpMinVal').textContent = hpMinSlider.value;
+            document.getElementById('hpMaxVal').textContent = hpMaxSlider.value;
+
+            filters.hpMin = parseFloat(hpMinSlider.value);
+            filters.hpMax = parseFloat(hpMaxSlider.value);
+            filters.head = parseFloat(document.getElementById('reqHead').value) || null;
+            filters.discharge = parseFloat(document.getElementById('reqDischarge').value) || null;
+            
+            filters.tubeDia = Array.from(document.querySelectorAll('.tube-dia-filter:checked')).map(el => el.value);
+
+            updateApp();
+        }
+
+        function updateApp() {
+            const filteredData = filterData(pumpData, filters);
+            updateCharts(filteredData);
+            updateTable(filteredData);
+            document.getElementById('itemCount').textContent = filteredData.length;
+        }
+
+        function filterData(data, currentFilters) {
+            return data.filter(pump => {
+                const hpMatch = pump.hp >= currentFilters.hpMin && pump.hp <= currentFilters.hpMax;
+                
+                const headMatch = !currentFilters.head || (pump.headMin <= currentFilters.head && pump.headMax >= currentFilters.head);
+                
+                const dischargeMatch = !currentFilters.discharge || (pump.dischargeMax >= currentFilters.discharge);
+                
+                const tubeDiaMatch = currentFilters.tubeDia.length === 0 || currentFilters.tubeDia.includes(pump.tubeWellDia.toString());
+                
+                return hpMatch && headMatch && dischargeMatch && tubeDiaMatch;
+            });
+        }
+
+        function updateCharts(filteredData) {
+            const priceData = filteredData.map(p => ({ x: p.hp, y: p.price, item: p }));
+            const perfData = filteredData.map(p => ({ x: p.dischargeMax, y: p.headMax, item: p }));
+
+            priceChart.data.datasets[0].data = priceData;
+            priceChart.update();
+
+            performanceChart.data.datasets[0].data = perfData;
+            performanceChart.update();
+        }
+
+        function updateTable(filteredData) {
+            const tableBody = document.getElementById('pumpTableBody');
+            tableBody.innerHTML = '';
+
+            if (filteredData.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-slate-500">
+                            No pumps match your selected criteria.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            filteredData.forEach(pump => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-slate-50';
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">${pump.id}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">${pump.hp}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">${pump.dischargeMin}-${pump.dischargeMax}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">${pump.headMin}-${pump.headMax}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">${pump.tubeWellDia}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">${formatCurrency(pump.price)}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+    </script>
+
+</body>
+</html>
